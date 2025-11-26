@@ -11,8 +11,8 @@ import re
 # CONFIGURATION
 # ==========================================
 # PASTE YOUR GOOGLE DRIVE LINKS HERE (Standard Share links are now okay!)
-MODEL_URL = "YOUR_DIRECT_LINK_TO_H5_FILE_HERE"  
-VOCAB_URL = "YOUR_DIRECT_LINK_TO_PKL_FILE_HERE"
+MODEL_URL = "https://drive.google.com/uc?id=1g5deJ3i0h1843BXCO-Kn-2xRvaNzEsCb"  
+VOCAB_URL = "https://drive.google.com/uc?id=1ET4ap1LK-yjr891U-WVJZT0oT1gwascD"
 
 MODEL_PATH = "demo_bin_classifier_best.h5"
 VOCAB_PATH = "asin_vocabulary.pkl"
