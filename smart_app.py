@@ -5,14 +5,14 @@ import sys
 import pickle
 import shutil
 import time
+import re
 
 # ==========================================
 # CONFIGURATION
 # ==========================================
-# REPLACE THESE WITH YOUR DIRECT LINKS
-MODEL_URL = "https://drive.google.com/uc?id=1g5deJ3i0h1843BXCO-Kn-2xRvaNzEsCb"  
-VOCAB_URL = "https://drive.google.com/uc?id=1ET4ap1LK-yjr891U-WVJZT0oT1gwascD"
-
+# PASTE YOUR GOOGLE DRIVE LINKS HERE (Standard Share links are now okay!)
+MODEL_URL = "YOUR_DIRECT_LINK_TO_H5_FILE_HERE"  
+VOCAB_URL = "YOUR_DIRECT_LINK_TO_PKL_FILE_HERE"
 
 MODEL_PATH = "demo_bin_classifier_best.h5"
 VOCAB_PATH = "asin_vocabulary.pkl"
@@ -20,8 +20,30 @@ VOCAB_PATH = "asin_vocabulary.pkl"
 st.set_page_config(page_title="Amazon Bin Classifier", layout="wide")
 
 # ==========================================
-# LIGHTWEIGHT UTILITIES
+# DOWNLOAD UTILITIES (Auto-Fix Links)
 # ==========================================
+
+def transform_drive_url(url):
+    """Converts a standard Google Drive 'view' link to a direct download link."""
+    if "drive.google.com" not in url:
+        return url
+        
+    # Extract ID from .../file/d/ID/view... or ...?id=ID...
+    patterns = [
+        r'/file/d/([a-zA-Z0-9_-]+)',
+        r'id=([a-zA-Z0-9_-]+)'
+    ]
+    
+    file_id = None
+    for p in patterns:
+        match = re.search(p, url)
+        if match:
+            file_id = match.group(1)
+            break
+            
+    if file_id:
+        return f'https://drive.google.com/uc?export=download&id={file_id}'
+    return url
 
 def get_confirm_token(response):
     for key, value in response.cookies.items():
@@ -33,9 +55,11 @@ def download_file_from_google_drive(url, destination):
     session = requests.Session()
     response = session.get(url, stream=True)
     token = get_confirm_token(response)
+
     if token:
         params = {'confirm': token}
         response = session.get(url, params=params, stream=True)
+
     save_response_content(response, destination)    
 
 def save_response_content(response, destination):
@@ -46,8 +70,9 @@ def save_response_content(response, destination):
                 f.write(chunk)
 
 def robust_download(url, filename):
+    # If file exists, check if it's a "fake" small HTML file
     if os.path.exists(filename):
-        if os.path.getsize(filename) < 10240: 
+        if os.path.getsize(filename) < 10240: # < 10KB
             os.remove(filename) 
         else:
             return True 
@@ -55,16 +80,22 @@ def robust_download(url, filename):
     if "YOUR_DIRECT_LINK" in url:
         return False
 
+    # Auto-fix Google Drive URLs
+    clean_url = transform_drive_url(url)
+
     with st.spinner(f"Downloading {filename}..."):
         try:
-            if "drive.google.com" in url:
-                download_file_from_google_drive(url, filename)
+            if "drive.google.com" in clean_url:
+                download_file_from_google_drive(clean_url, filename)
             else:
-                response = requests.get(url, stream=True)
+                response = requests.get(clean_url, stream=True)
                 save_response_content(response, filename)
             
+            # Validation: Did we just download an error page?
             if os.path.getsize(filename) < 10240:
-                st.error(f"Download of {filename} failed. File too small.")
+                st.error(f"Download Error: {filename} is too small (<10KB).")
+                st.warning(f"Link used: {clean_url}")
+                st.info("Ensure the Google Drive file permission is set to 'Anyone with the link'")
                 os.remove(filename)
                 return False
             return True
@@ -95,17 +126,20 @@ def load_heavy_libraries():
 
 @st.cache_resource
 def setup_model(vocab_url, model_url):
+    # 1. Download
     has_vocab = robust_download(vocab_url, VOCAB_PATH)
     has_model = robust_download(model_url, MODEL_PATH)
 
     if not has_vocab or not has_model:
         return None, None, None, "Files missing or invalid links."
 
+    # 2. Imports
     try:
         np, cv2, Image, h5py, torch, clip, tf, keras, layers, Model, EfficientNetV2B0 = load_heavy_libraries()
     except Exception as e:
         return None, None, None, f"Library Import Error: {str(e)}"
 
+    # 3. Check H5 Integrity
     if not h5py.is_hdf5(MODEL_PATH):
         os.remove(MODEL_PATH)
         return None, None, None, "Corrupt .h5 file deleted. Please reload."
@@ -147,11 +181,8 @@ def setup_model(vocab_url, model_url):
             return img
 
     def build_hybrid_model(num_classes):
-        # EXACT ARCHITECTURE MATCHING SMARTCLIP.PY
         cnn_input = layers.Input(shape=(224, 224, 3), name='cnn_input')
         backbone = EfficientNetV2B0(include_top=False, weights='imagenet', input_tensor=cnn_input)
-        
-        # We don't need to loop trainable=False for inference, skipping that loop
         
         cnn_features = backbone.output
         cnn_features = layers.GlobalAveragePooling2D()(cnn_features)
@@ -169,7 +200,6 @@ def setup_model(vocab_url, model_url):
         fused = layers.BatchNormalization()(fused)
         fused = layers.Dropout(0.4)(fused)
 
-        # Output branches
         item_branch = layers.Dense(256, activation='relu')(fused)
         item_branch = layers.Dropout(0.3)(item_branch)
         item_output = layers.Dense(num_classes, activation='sigmoid', name='item_presence')(item_branch)
@@ -189,11 +219,9 @@ def setup_model(vocab_url, model_url):
     processor = AmazonBinDataProcessor(VOCAB_PATH)
     
     try:
-        # Strategy 1: Try full load
         model = keras.models.load_model(MODEL_PATH)
     except:
-        # Strategy 2: Rebuild & Load Weights
-        # CRITICAL FIX: Match the num_classes logic from smartclip.py
+        # Fallback Logic: match smartclip.py num_classes logic
         vocab_len = len(processor.asin_to_idx) if processor.asin_to_idx else 0
         num_classes = min(200, max(1, vocab_len))
         
