@@ -24,8 +24,8 @@ from pathlib import Path
 #    - For Dropbox, change 'dl=0' to 'dl=1' at the end of the link.
 # 3. Paste them below.
 
-MODEL_URL = "https://drive.google.com/file/d/1g5deJ3i0h1843BXCO-Kn-2xRvaNzEsCb/view?usp=sharing"  
-VOCAB_URL = "https://drive.google.com/file/d/1ET4ap1LK-yjr891U-WVJZT0oT1gwascD/view?usp=sharing"
+MODEL_URL = "https://drive.google.com/uc?id=1g5deJ3i0h1843BXCO-Kn-2xRvaNzEsCb"  
+VOCAB_URL = "https://drive.google.com/uc?id=1ET4ap1LK-yjr891U-WVJZT0oT1gwascD"
 
 # Local paths where files will be saved/checked
 MODEL_PATH = "demo_bin_classifier_best.h5"
@@ -251,4 +251,5 @@ else:
                 if results_data:
                     st.table(results_data)
                 else:
+
                     st.write("No items detected with high confidence.")
