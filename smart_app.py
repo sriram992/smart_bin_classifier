@@ -214,13 +214,28 @@ def setup_model(vocab_url, model_url):
     try:
         model = keras.models.load_model(MODEL_PATH)
     except:
+        # Fallback Logic: Try different vocab sizes to match weights
         vocab_len = len(processor.asin_to_idx) if processor.asin_to_idx else 0
-        num_classes = min(200, max(1, vocab_len))
-        model = build_hybrid_model(num_classes)
-        try:
-            model.load_weights(MODEL_PATH)
-        except Exception as e:
-            return None, None, None, f"Weight Mismatch: {str(e)}"
+        
+        # We try the calculated vocab size first, then 200 (the training script limit)
+        # This fixes "Weight Mismatch: shape (256, 200) vs (256, 100)" errors
+        candidate_sizes = [min(200, max(1, vocab_len)), 200]
+        candidate_sizes = sorted(list(set(candidate_sizes))) # dedupe
+        
+        success = False
+        last_err = None
+        
+        for n in candidate_sizes:
+            try:
+                model = build_hybrid_model(n)
+                model.load_weights(MODEL_PATH)
+                success = True
+                break
+            except Exception as e:
+                last_err = e
+        
+        if not success:
+            return None, None, None, f"Weight Mismatch: {str(last_err)}"
 
     return clip_extractor, processor, model, None
 
